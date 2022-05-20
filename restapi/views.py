@@ -240,10 +240,13 @@ def read_logs_from_urls(urls, num_threads):
     """
         Read multiple files through HTTP
     """
+    READ_TIMEOUT = 60
     result = []
-    for url in urls:
-        data = read_data_from_url(url, 60)
-        data = data.decode('utf-8')
-        result.extend(data.split("\n"))
+    with ThreadPoolExecutor(num_threads) as executor:
+        futures = [executor.submit(read_data_from_url, url, READ_TIMEOUT) for url in urls]
+        for future in as_completed(futures):
+            data = future.result()
+            data = data.decode('utf-8')
+            result.extend(data.split("\n"))
     result = sorted(result, key=lambda elem:elem[1])
     return result
