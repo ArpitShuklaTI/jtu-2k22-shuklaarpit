@@ -38,7 +38,7 @@ def get_balances(request):
     expenses = Expense.objects.filter(users__in=user.expenses.all())
     final_balance = {}
     for expense in expenses:
-        expense_balances = normalize(expense)
+        expense_balances = normalize([expense])
         for eb in expense_balances:
             from_user = eb['from_user']
             to_user = eb['to_user']
@@ -52,12 +52,13 @@ def get_balances(request):
     return Response(response, status=200)
 
 
-def normalize(expense):
-    user_balances = expense.users.all()
+def normalize(expenses):
     dues = {}
-    for user_balance in user_balances:
-        dues[user_balance.user] = dues.get(user_balance.user, 0) + user_balance.amount_lent \
-                                  - user_balance.amount_owed
+    for expense in expenses:
+        user_balances = UserExpense.objects.filter(expense=expense)
+        for user_balance in user_balances:
+            dues[user_balance.user] = dues.get(user_balance.user, 0) + user_balance.amount_lent \
+                                      - user_balance.amount_owed
     dues = [(k, v) for k, v in sorted(dues.items(), key=lambda item: item[1])]
     start = 0
     end = len(dues) - 1
@@ -70,7 +71,7 @@ def normalize(expense):
         dues[end] = (dues[end][0], dues[end][1] - amount)
         if dues[start][1] == 0:
             start += 1
-        else:
+        if dues[end][1] == 0:
             end -= 1
     return balances
 
@@ -139,28 +140,7 @@ class GroupViewSet(ModelViewSet):
         if group not in self.get_queryset():
             raise UnauthorizedUserException()
         expenses = Expense.objects.filter(group=group)
-        dues = {}
-        for expense in expenses:
-            user_balances = UserExpense.objects.filter(expense=expense)
-            for user_balance in user_balances:
-                dues[user_balance.user] = dues.get(user_balance.user, 0) + user_balance.amount_lent \
-                                          - user_balance.amount_owed
-        dues = [(k, v) for k, v in sorted(dues.items(), key=lambda item: item[1])]
-        start = 0
-        end = len(dues) - 1
-        balances = []
-        while start < end:
-            amount = min(abs(dues[start][1]), abs(dues[end][1]))
-            amount = Decimal(amount).quantize(Decimal(10)**-2)
-            user_balance = {"from_user": dues[start][0].id, "to_user": dues[end][0].id, "amount": str(amount)}
-            balances.append(user_balance)
-            dues[start] = (dues[start][0], dues[start][1] + amount)
-            dues[end] = (dues[end][0], dues[end][1] - amount)
-            if dues[start][1] == 0:
-                start += 1
-            else:
-                end -= 1
-
+        balances = normalize(expenses)
         return Response(balances, status=200)
 
 
