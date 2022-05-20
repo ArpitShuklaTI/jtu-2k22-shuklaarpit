@@ -11,20 +11,20 @@ class Category(models.Model):
     name = models.CharField(max_length=200, null=False)
 
 
-class Groups(models.Model):
+class Group(models.Model):
     name = models.CharField(max_length=100, null=False)
     members = models.ManyToManyField(User, related_name='members', blank=True)
 
 
-class Expenses(models.Model):
+class Expense(models.Model):
     description = models.CharField(max_length=200)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    group = models.ForeignKey(Groups, null=True, on_delete=models.CASCADE)
+    group = models.ForeignKey(Group, null=True, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, default=1, on_delete=models.CASCADE)
 
 
 class UserExpense(models.Model):
-    expense = models.ForeignKey(Expenses, default=1, on_delete=models.CASCADE, related_name="users")
+    expense = models.ForeignKey(Expense, default=1, on_delete=models.CASCADE, related_name="users")
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="expenses")
     amount_owed = models.DecimalField(max_digits=10, decimal_places=2)
     amount_lent = models.DecimalField(max_digits=10, decimal_places=2)

@@ -33,9 +33,9 @@ def logout(request):
 
 
 @api_view(['GET'])
-def balance(request):
+def get_balances(request):
     user = request.user
-    expenses = Expenses.objects.filter(users__in=user.expenses.all())
+    expenses = Expense.objects.filter(users__in=user.expenses.all())
     final_balance = {}
     for expense in expenses:
         expense_balances = normalize(expense)
@@ -75,20 +75,20 @@ def normalize(expense):
     return balances
 
 
-class user_view_set(ModelViewSet):
+class UserViewSet(ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = (AllowAny,)
 
 
-class category_view_set(ModelViewSet):
+class CategoryViewSet(ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     http_method_names = ['get', 'post']
 
 
-class group_view_set(ModelViewSet):
-    queryset = Groups.objects.all()
+class GroupViewSet(ModelViewSet):
+    queryset = Group.objects.all()
     serializer_class = GroupSerializer
 
     def get_queryset(self):
@@ -101,15 +101,15 @@ class group_view_set(ModelViewSet):
     def create(self, request, *args, **kwargs):
         user = self.request.user
         data = self.request.data
-        group = Groups(**data)
+        group = Group(**data)
         group.save()
         group.members.add(user)
         serializer = self.get_serializer(group)
         return Response(serializer.data, status=201)
 
     @action(methods=['put'], detail=True)
-    def members(self, request, pk=None):
-        group = Groups.objects.get(id=pk)
+    def update_members(self, request, pk=None):
+        group = Group.objects.get(id=pk)
         if group not in self.get_queryset():
             raise UnauthorizedUserException()
         body = request.data
@@ -125,8 +125,8 @@ class group_view_set(ModelViewSet):
         return Response(status=204)
 
     @action(methods=['get'], detail=True)
-    def expenses(self, _request, pk=None):
-        group = Groups.objects.get(id=pk)
+    def get_expenses(self, _request, pk=None):
+        group = Group.objects.get(id=pk)
         if group not in self.get_queryset():
             raise UnauthorizedUserException()
         expenses = group.expenses_set
@@ -134,11 +134,11 @@ class group_view_set(ModelViewSet):
         return Response(serializer.data, status=200)
 
     @action(methods=['get'], detail=True)
-    def balances(self, _request, pk=None):
-        group = Groups.objects.get(id=pk)
+    def get_balances(self, _request, pk=None):
+        group = Group.objects.get(id=pk)
         if group not in self.get_queryset():
             raise UnauthorizedUserException()
-        expenses = Expenses.objects.filter(group=group)
+        expenses = Expense.objects.filter(group=group)
         dues = {}
         for expense in expenses:
             user_balances = UserExpense.objects.filter(expense=expense)
@@ -164,23 +164,23 @@ class group_view_set(ModelViewSet):
         return Response(balances, status=200)
 
 
-class expenses_view_set(ModelViewSet):
-    queryset = Expenses.objects.all()
+class ExpensesViewSet(ModelViewSet):
+    queryset = Expense.objects.all()
     serializer_class = ExpensesSerializer
 
     def get_queryset(self):
         user = self.request.user
         if self.request.query_params.get('q', None) is not None:
-            expenses = Expenses.objects.filter(users__in=user.expenses.all())\
+            expenses = Expense.objects.filter(users__in=user.expenses.all())\
                 .filter(description__icontains=self.request.query_params.get('q', None))
         else:
-            expenses = Expenses.objects.filter(users__in=user.expenses.all())
+            expenses = Expense.objects.filter(users__in=user.expenses.all())
         return expenses
 
 @api_view(['post'])
 @authentication_classes([])
 @permission_classes([])
-def logProcessor(request):
+def process_logs(request):
     data = request.data
     num_threads = data['parallelFileProcessingCount']
     log_files = data['logFiles']
@@ -190,22 +190,20 @@ def logProcessor(request):
     if len(log_files) == 0:
         return Response({"status": "failure", "reason": "No log files provided in request"},
                         status=status.HTTP_400_BAD_REQUEST)
-    logs = multiThreadedReader(urls=data['logFiles'], num_threads=data['parallelFileProcessingCount'])
+    logs = read_logs_from_urls(urls=data['logFiles'], num_threads=data['parallelFileProcessingCount'])
     sorted_logs = sort_by_time_stamp(logs)
     cleaned = transform(sorted_logs)
     data = aggregate(cleaned)
-    response = response_format(data)
-    return Response({"response":response}, status=status.HTTP_200_OK)
+    response = format_response(data)
+    return Response({"response": response}, status=status.HTTP_200_OK)
 
-def sort_by_time_stamp(logs):
-    data = []
-    for log in logs:
-        data.append(log.split(" "))
+def sort_by_timestamp(logs):
+    data = [log.split(" ") for log in logs]
     # print(data)
     data = sorted(data, key=lambda elem: elem[1])
     return data
 
-def response_format(raw_data):
+def format_response(raw_data):
     response = []
     for timestamp, data in raw_data.items():
         entry = {'timestamp': timestamp}
@@ -254,18 +252,18 @@ def transform(logs):
     return result
 
 
-def reader(url, timeout):
+def read_data_from_url(url, timeout):
     with urllib.request.urlopen(url, timeout=timeout) as conn:
         return conn.read()
 
 
-def multiThreadedReader(urls, num_threads):
+def read_logs_from_urls(urls, num_threads):
     """
         Read multiple files through HTTP
     """
     result = []
     for url in urls:
-        data = reader(url, 60)
+        data = read_data_from_url(url, 60)
         data = data.decode('utf-8')
         result.extend(data.split("\n"))
     result = sorted(result, key=lambda elem:elem[1])
