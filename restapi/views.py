@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import time
 from __future__ import unicode_literals
 
 from django.http import HttpResponse
@@ -15,6 +16,7 @@ from restapi.models import *
 from restapi.serializers import *
 from restapi.custom_exception import UnauthorizedUserException
 from utils.process_logs import *
+from utils.base_logger import logger
 from utils.calculate_balances import get_user_balances, normalize
 
 
@@ -64,8 +66,9 @@ class GroupViewSet(ModelViewSet):
         user = self.request.user
         data = self.request.data
         group = Group(**data)
-        group.save()
         group.members.add(user)
+        group.save()
+        logger.info(f"New group created by {user}, group={group}")
         serializer = self.get_serializer(group)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -73,32 +76,38 @@ class GroupViewSet(ModelViewSet):
     def update_members(self, request, pk=None):
         group = Group.objects.get(id=pk)
         if group not in self.get_queryset():
+            logger.error(f"Unauthorized access to group with pk={pk} by {request.user}")
             raise UnauthorizedUserException()
         body = request.data
         if body.get('add', None) is not None and body['add'].get('user_ids', None) is not None:
             added_ids = body['add']['user_ids']
             for user_id in added_ids:
+                logger.info(f"Adding {user_id} to group with pk={pk}")
                 group.members.add(user_id)
         if body.get('remove', None) is not None and body['remove'].get('user_ids', None) is not None:
             removed_ids = body['remove']['user_ids']
             for user_id in removed_ids:
+                logger.info(f"Removing {user_id} from group with pk={pk}")
                 group.members.remove(user_id)
         group.save()
+        logger.info("Group members updated successfully")
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(methods=['get'], detail=True)
-    def get_expenses(self, _request, pk=None):
+    def get_expenses(self, request, pk=None):
         group = Group.objects.get(id=pk)
         if group not in self.get_queryset():
+            logger.error(f"Unauthorized access to group with pk={pk} by {request.user}")
             raise UnauthorizedUserException()
         expenses = group.expenses_set
         serializer = ExpenseSerializer(expenses, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(methods=['get'], detail=True)
-    def get_balances(self, _request, pk=None):
+    def get_balances(self, request, pk=None):
         group = Group.objects.get(id=pk)
         if group not in self.get_queryset():
+            logger.error(f"Unauthorized access to group with pk={pk} by {request.user}")
             raise UnauthorizedUserException()
         expenses = Expense.objects.filter(group=group)
         balances = normalize(expenses)
@@ -131,9 +140,14 @@ def process_logs(request):
     if len(log_files) == 0:
         return Response({"status": "failure", "reason": "No log files provided in request"},
                         status=status.HTTP_400_BAD_REQUEST)
+    start = time.time()
     logs = read_logs_from_urls(urls=data['logFiles'], num_threads=data['parallelFileProcessingCount'])
+    time_taken = int((time.time() - start) * 1000)
+    logger.info(f"Took {time_taken}ms to read {len(log_files)} logs using {num_threads} threads")
     sorted_logs = sort_by_timestamp(logs)
     cleaned = transform(sorted_logs)
     data = aggregate(cleaned)
     response = format_response(data)
+    time_taken = int((time.time() - start) * 1000)
+    logger.info(f"Took {time_taken}ms to process all logs")
     return Response({"response": response}, status=status.HTTP_200_OK)
