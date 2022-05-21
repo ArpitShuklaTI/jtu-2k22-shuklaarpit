@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-import time
 from __future__ import unicode_literals
+import time
+from typing import Any
 
 from django.http import HttpResponse
 from django.contrib.auth.models import User
@@ -34,8 +35,8 @@ def logout(request):
 def get_balances(request):
     user = request.user
     expenses = Expense.objects.filter(users__in=user.expenses.all())
-    final_balance = get_user_balances(expenses, user)
-    response = [{"user": k, "amount": int(v)} for k, v in final_balance.items()]
+    final_balance: dict[int, float] = get_user_balances(expenses, user)
+    response: list[dict[str, Any]] = [{"user": k, "amount": int(v)} for k, v in final_balance.items()]
     return Response(response, status=status.HTTP_200_OK)
 
 
@@ -63,18 +64,18 @@ class GroupViewSet(ModelViewSet):
         return groups
 
     def create(self, request, *args, **kwargs):
-        user = self.request.user
+        user: User = self.request.user
         data = self.request.data
-        group = Group(**data)
+        group: Group = Group(**data)
         group.members.add(user)
         group.save()
         logger.info(f"New group created by {user}, group={group}")
-        serializer = self.get_serializer(group)
+        serializer: GroupSerializer = self.get_serializer(group)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(methods=['put'], detail=True)
     def update_members(self, request, pk=None):
-        group = Group.objects.get(id=pk)
+        group: Group = Group.objects.get(id=pk)
         if group not in self.get_queryset():
             logger.error(f"Unauthorized access to group with pk={pk} by {request.user}")
             raise UnauthorizedUserException()
@@ -95,22 +96,22 @@ class GroupViewSet(ModelViewSet):
 
     @action(methods=['get'], detail=True)
     def get_expenses(self, request, pk=None):
-        group = Group.objects.get(id=pk)
+        group: Group = Group.objects.get(id=pk)
         if group not in self.get_queryset():
             logger.error(f"Unauthorized access to group with pk={pk} by {request.user}")
             raise UnauthorizedUserException()
-        expenses = group.expenses_set
-        serializer = ExpenseSerializer(expenses, many=True)
+        expenses: list[Expense] = group.expenses_set
+        serializer: ExpenseSerializer = ExpenseSerializer(expenses, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(methods=['get'], detail=True)
     def get_balances(self, request, pk=None):
-        group = Group.objects.get(id=pk)
+        group: Group = Group.objects.get(id=pk)
         if group not in self.get_queryset():
             logger.error(f"Unauthorized access to group with pk={pk} by {request.user}")
             raise UnauthorizedUserException()
         expenses = Expense.objects.filter(group=group)
-        balances = normalize(expenses)
+        balances: list[dict[str, Any]] = normalize(expenses)
         return Response(balances, status=status.HTTP_200_OK)
 
 
@@ -119,7 +120,7 @@ class ExpensesViewSet(ModelViewSet):
     serializer_class = ExpenseSerializer
 
     def get_queryset(self):
-        user = self.request.user
+        user: User = self.request.user
         if self.request.query_params.get('q', None) is not None:
             expenses = Expense.objects.filter(users__in=user.expenses.all())\
                 .filter(description__icontains=self.request.query_params.get('q', None))
@@ -132,8 +133,8 @@ class ExpensesViewSet(ModelViewSet):
 @permission_classes([])
 def process_logs(request):
     data = request.data
-    num_threads = data['parallelFileProcessingCount']
-    log_files = data['logFiles']
+    num_threads: int = data['parallelFileProcessingCount']
+    log_files: list[str] = data['logFiles']
     if num_threads <= 0 or num_threads > 30:
         return Response({"status": "failure", "reason": "Parallel Processing Count out of expected bounds"},
                         status=status.HTTP_400_BAD_REQUEST)
@@ -141,13 +142,13 @@ def process_logs(request):
         return Response({"status": "failure", "reason": "No log files provided in request"},
                         status=status.HTTP_400_BAD_REQUEST)
     start = time.time()
-    logs = read_logs_from_urls(urls=data['logFiles'], num_threads=data['parallelFileProcessingCount'])
+    logs: list[str] = read_logs_from_urls(urls=data['logFiles'], num_threads=data['parallelFileProcessingCount'])
     time_taken = int((time.time() - start) * 1000)
     logger.info(f"Took {time_taken}ms to read {len(log_files)} logs using {num_threads} threads")
-    sorted_logs = sort_by_timestamp(logs)
-    cleaned = transform(sorted_logs)
-    data = aggregate(cleaned)
-    response = format_response(data)
+    sorted_logs: list[list[str]] = sort_by_timestamp(logs)
+    cleaned: list[list[str]] = transform(sorted_logs)
+    data: dict[str, dict[str, int]] = aggregate(cleaned)
+    response: list[dict[str, Any]] = format_response(data)
     time_taken = int((time.time() - start) * 1000)
     logger.info(f"Took {time_taken}ms to process all logs")
     return Response({"response": response}, status=status.HTTP_200_OK)

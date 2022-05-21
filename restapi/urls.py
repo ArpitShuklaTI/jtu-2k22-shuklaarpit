@@ -2,7 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 from rest_framework.authtoken import views
 
-from restapi.views import UserViewSet, CategoryViewSet, GroupViewSet, ExpensesViewSet, index, logout, get_balance, \
+from restapi.views import UserViewSet, CategoryViewSet, GroupViewSet, ExpensesViewSet, index, logout, get_balances, \
     process_logs
 
 
